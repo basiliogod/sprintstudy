@@ -1,0 +1,1 @@
+// Variante persuasiva B (banner com "X colegas a estudar agora")

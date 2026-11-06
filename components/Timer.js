@@ -1,0 +1,1 @@
+// Temporizador de 45 minutos para sessão de estudo

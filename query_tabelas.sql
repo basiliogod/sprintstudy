@@ -18,9 +18,13 @@ CREATE TABLE sessions (
   completed_at TIMESTAMP WITH TIME ZONE
 );
 
--- Políticas de acesso público
+-- Ativação do Row Level Security
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Acesso público total a users" ON users FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Acesso público total a sessions" ON sessions FOR ALL USING (true) WITH CHECK (true);
+-- Política de leitura pública (apenas SELECT) para sessions
+CREATE POLICY "Leitura pública de sessions"
+ON sessions
+FOR SELECT
+TO anon, authenticated
+USING (true);

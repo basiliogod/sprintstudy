@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%">
+  <defs>
+    <linearGradient id="favSprintGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+  </defs>
+
+  <!-- Base arredondada escura de alto contraste -->
+  <rect width="64" height="64" rx="16" fill="#0F172A" />
+
+  <!-- Pino superior do cronómetro -->
+  <rect x="28" y="7" width="8" height="4" rx="2" fill="#94A3B8" />
+
+  <!-- Base circular do timer -->
+  <circle cx="32" cy="36" r="19" stroke="#1E293B" stroke-width="5.5" fill="none" />
+
+  <!-- Arco de 45 minutos (3/4 de volta) -->
+  <!-- 2 * pi * 19 = 119.38; 75% = 89.5 -->
+  <circle cx="32" cy="36" r="19" stroke="url(#favSprintGrad)" stroke-width="5.5" stroke-linecap="round" stroke-dasharray="89.5 119.4" transform="rotate(-90 32 36)" fill="none" />
+
+  <!-- Ponteiros do relógio indicando o quadrante dos 45 min -->
+  <circle cx="32" cy="36" r="3" fill="#F8FAFC" />
+  <path d="M 32 36 L 32 23" stroke="#F8FAFC" stroke-width="2.8" stroke-linecap="round" />
+  <path d="M 32 36 L 20 36" stroke="#38BDF8" stroke-width="2.8" stroke-linecap="round" />
+</svg>

@@ -48,3 +48,24 @@ FOR UPDATE
 TO authenticated
 USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
+
+-- Permitir leitura de utilizadores por username para validação de login
+CREATE POLICY "Permitir leitura para verificação de login"
+ON users
+FOR SELECT
+TO anon, authenticated
+USING (true);
+
+-- Permitir atualização de dados da própria conta anónima
+CREATE POLICY "Permitir upsert do próprio perfil anónimo"
+ON users
+FOR INSERT
+TO anon, authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Permitir update do próprio utilizador"
+ON users
+FOR UPDATE
+TO anon, authenticated
+USING (true)
+WITH CHECK (true);

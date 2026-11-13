@@ -33,7 +33,8 @@ export async function getAnalyticsSummary() {
   });
 
   // 1. Métricas Globais
-  const totalUsers = users.length;
+  const distinctSessionUserIds = new Set(sessions.map((s) => s.user_id).filter(Boolean));
+  const totalUsers = Math.max(users.length, distinctSessionUserIds.size);
   const totalSessions = sessions.length;
   const completedSessions = sessions.filter((s) => s.status === 'completed').length;
   const cancelledSessions = sessions.filter((s) => s.status === 'cancelled').length;
@@ -83,6 +84,11 @@ export async function getAnalyticsSummary() {
   const sessionsGroupA = enrichedSessions.filter((s) => s.abGroup === 'A');
   const sessionsGroupB = enrichedSessions.filter((s) => s.abGroup === 'B');
 
+  const distinctUsersA = new Set(sessionsGroupA.map((s) => s.userId).filter(Boolean)).size;
+  const distinctUsersB = new Set(sessionsGroupB.map((s) => s.userId).filter(Boolean)).size;
+  const countUsersA = Math.max(usersGroupA.length, distinctUsersA);
+  const countUsersB = Math.max(usersGroupB.length, distinctUsersB);
+
   const completedA = sessionsGroupA.filter((s) => s.status === 'completed').length;
   const cancelledA = sessionsGroupA.filter((s) => s.status === 'cancelled').length;
   const startedA = sessionsGroupA.filter((s) => s.status === 'started').length;
@@ -114,7 +120,7 @@ export async function getAnalyticsSummary() {
     groupA: {
       name: 'Grupo A (Controlo)',
       description: 'Interface padrão sem indicador de prova social comunitária',
-      usersCount: usersGroupA.length,
+      usersCount: countUsersA,
       totalSessions: sessionsGroupA.length,
       completedSessions: completedA,
       cancelledSessions: cancelledA,
@@ -122,14 +128,14 @@ export async function getAnalyticsSummary() {
       completionRate: rateA,
       totalFocusMinutes: minutesA,
       totalFocusHours: Number((minutesA / 60).toFixed(1)),
-      avgSessionsPerUser: usersGroupA.length > 0
-        ? Number((sessionsGroupA.length / usersGroupA.length).toFixed(1))
+      avgSessionsPerUser: countUsersA > 0
+        ? Number((sessionsGroupA.length / countUsersA).toFixed(1))
         : 0,
     },
     groupB: {
       name: 'Grupo B (Variante Persuasiva)',
       description: 'Interface com banner de prova social ("X estudantes a focar agora")',
-      usersCount: usersGroupB.length,
+      usersCount: countUsersB,
       totalSessions: sessionsGroupB.length,
       completedSessions: completedB,
       cancelledSessions: cancelledB,
@@ -137,8 +143,8 @@ export async function getAnalyticsSummary() {
       completionRate: rateB,
       totalFocusMinutes: minutesB,
       totalFocusHours: Number((minutesB / 60).toFixed(1)),
-      avgSessionsPerUser: usersGroupB.length > 0
-        ? Number((sessionsGroupB.length / usersGroupB.length).toFixed(1))
+      avgSessionsPerUser: countUsersB > 0
+        ? Number((sessionsGroupB.length / countUsersB).toFixed(1))
         : 0,
     },
     comparison: {

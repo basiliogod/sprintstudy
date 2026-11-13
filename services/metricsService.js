@@ -66,6 +66,49 @@ export function calculateFocusLevel(totalMinutes = 0) {
 }
 
 /**
+ * Gera a distribuição de minutos estudados de Segunda a Domingo na semana atual
+ * @param {Array} completedSessions
+ * @returns {Array} Array de 7 dias com minutos e proporção
+ */
+export function calculateWeeklyBreakdown(completedSessions = []) {
+  const daysShort = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+  const now = new Date();
+  
+  // Encontra a Segunda-feira da semana atual (ISO: 1 = Seg, 7 = Dom)
+  const currentDayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // 1..7
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (currentDayOfWeek - 1));
+  monday.setHours(0, 0, 0, 0);
+
+  const breakdown = [];
+
+  for (let i = 0; i < 7; i++) {
+    const targetDate = new Date(monday);
+    targetDate.setDate(monday.getDate() + i);
+    const dateStr = targetDate.toISOString().split('T')[0];
+
+    // Soma os minutos de sessões completadas neste dia
+    const daySessions = completedSessions.filter((s) => {
+      const sDateStr = new Date(s.completed_at || s.started_at).toISOString().split('T')[0];
+      return sDateStr === dateStr;
+    });
+
+    const minutes = daySessions.reduce((acc, s) => acc + (s.duration_minutes || 45), 0);
+
+    breakdown.push({
+      day: daysShort[i],
+      date: dateStr,
+      minutes,
+      count: daySessions.length,
+      isToday: dateStr === now.toISOString().split('T')[0],
+      isFuture: targetDate > now && dateStr !== now.toISOString().split('T')[0],
+    });
+  }
+
+  return breakdown;
+}
+
+/**
  * Agrega e calcula todas as estatísticas consolidadas de um utilizador
  * @param {Array} sessionList - Lista completa de sessões
  * @returns {Object} Estatísticas consolidadas
@@ -83,10 +126,42 @@ export function calculateUserStats(sessionList = []) {
   const streak = calculateStreak(completed);
   const focusLevel = calculateFocusLevel(totalMinutes);
 
+  // 1. Verificação se já estudou hoje
+  const todayStr = new Date().toISOString().split('T')[0];
+  const studiedToday = completed.some(
+    (s) => new Date(s.completed_at || s.started_at).toISOString().split('T')[0] === todayStr
+  );
+
+  // 2. Alerta de urgência do Streak
+  const streakExpiresToday = streak > 0 && !studiedToday;
+
+  // 3. Gráfico semanal (Segunda a Domingo)
+  const weeklyBreakdown = calculateWeeklyBreakdown(completed);
+
+  // 4. Streak Freeze (Congelador de Sequência): 5 sprints na semana = 1 freeze
+  const now = new Date();
+  const currentDayOfWeek = now.getDay() === 0 ? 7 : now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (currentDayOfWeek - 1));
+  monday.setHours(0, 0, 0, 0);
+
+  const thisWeekSprints = completed.filter(
+    (s) => new Date(s.completed_at || s.started_at) >= monday
+  ).length;
+
+  const streakFreezes = Math.floor(thisWeekSprints / 5);
+  const nextFreezeProgress = thisWeekSprints % 5; // ex: 3 de 5
+
   return {
     completedCount,
     totalMinutes,
     streak,
     focusLevel,
+    studiedToday,
+    streakExpiresToday,
+    weeklyBreakdown,
+    thisWeekSprints,
+    streakFreezes,
+    nextFreezeProgress,
   };
 }

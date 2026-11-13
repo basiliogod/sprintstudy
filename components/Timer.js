@@ -1,6 +1,6 @@
 // Temporizador de 45 minutos para sessão de estudo
 // VIEW desacoplada: comunica exclusivamente com o API Gateway (/api/sessions)
-// Suporta recuperação pós-refresh (F5), proteção beforeunload e auto-cancelamento por abandono
+// Inclui micro-compromissos, sons ambientes múltiplos, sino tibetano e fecho dopaminérgico
 
 'use client';
 
@@ -11,17 +11,80 @@ import confetti from 'canvas-confetti';
 const SPRINT_DURATION_SECONDS = 45 * 60; // 45 minutos fixos (Efeito Ancoragem)
 const STORAGE_KEY_ACTIVE_SPRINT = 'studysprint_active_sprint';
 
+const AMBIENT_SOUNDS = [
+  {
+    id: 'lofi',
+    name: 'Lo-Fi Beats',
+    src: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3',
+  },
+  {
+    id: 'rain',
+    name: 'Chuva Suave',
+    src: 'https://cdn.pixabay.com/download/audio/2021/09/06/audio_73229b1d7f.mp3?filename=soft-rain-ambient-111154.mp3',
+  },
+  {
+    id: 'cafe',
+    name: 'Café & Biblioteca',
+    src: 'https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=coffee-shop-ambience-19875.mp3',
+  },
+];
+
+// Função de síntese acústica do Sino Tibetano / Gongo de Meditação (Web Audio API)
+function playMeditationBell() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+
+    const playHarmonic = (freq, gainLevel, decay) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+      gain.gain.setValueAtTime(gainLevel, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + decay);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime + decay);
+    };
+
+    // Harmónicos ricos de tigela tibetana
+    playHarmonic(432, 0.45, 5.0);
+    playHarmonic(864, 0.18, 3.5);
+    playHarmonic(1296, 0.09, 2.2);
+    playHarmonic(216, 0.3, 5.5);
+  } catch (e) {
+    console.error('Erro ao tocar sino de meditação:', e);
+  }
+}
+
 export default function Timer({ userSession, onSprintComplete }) {
   const [topic, setTopic] = useState('');
   const [timeLeft, setTimeLeft] = useState(SPRINT_DURATION_SECONDS);
   const [isActive, setIsActive] = useState(false);
   const [sessionId, setSessionId] = useState(null);
-  const [audioPlaying, setAudioPlaying] = useState(false);
   const [tabSwitches, setTabSwitches] = useState(0);
+
+  // Micro-compromissos pré-Sprint (iniciam desmarcados)
+  const [phoneCheck, setPhoneCheck] = useState(false);
+  const [waterCheck, setWaterCheck] = useState(false);
+
+  // Seleção e reprodução de sons ambientes
+  const [selectedSoundId, setSelectedSoundId] = useState('lofi');
+  const [audioPlaying, setAudioPlaying] = useState(false);
 
   // Notificações visuais de estado
   const [restoredNotice, setRestoredNotice] = useState(false);
   const [abandonedNotice, setAbandonedNotice] = useState(false);
+
+  // Fecho Dopaminérgico da Tarefa pós-timer
+  const [reviewingTask, setReviewingTask] = useState(false);
+  const [taskOutcome, setTaskOutcome] = useState(null);
 
   const audioRef = useRef(null);
   const timerIntervalRef = useRef(null);
@@ -46,7 +109,6 @@ export default function Timer({ userSession, onSprintComplete }) {
           sprintStartRef.current = parsed.startTime;
           setIsActive(true);
 
-          // Contabiliza a recarga/saída como distração
           const nextSwitches = (parsed.tabSwitches || 0) + 1;
           setTabSwitches(nextSwitches);
           setRestoredNotice(true);
@@ -72,7 +134,7 @@ export default function Timer({ userSession, onSprintComplete }) {
     const handleBeforeUnload = (e) => {
       if (isActive) {
         e.preventDefault();
-        e.returnValue = ''; // Ativa o popup de confirmação de saída do navegador
+        e.returnValue = '';
       }
     };
 
@@ -115,12 +177,12 @@ export default function Timer({ userSession, onSprintComplete }) {
           setTimeLeft(remaining);
 
           if (remaining === 0) {
-            handleCompleteSprint();
+            handleSprintZeroReached();
           }
         } else {
           setTimeLeft((prev) => {
             if (prev <= 1) {
-              handleCompleteSprint();
+              handleSprintZeroReached();
               return 0;
             }
             return prev - 1;
@@ -132,7 +194,7 @@ export default function Timer({ userSession, onSprintComplete }) {
     return () => clearInterval(timerIntervalRef.current);
   }, [isActive, timeLeft]);
 
-  // Iniciar Sprint de 45 minutos (via API Gateway)
+  // 5. Iniciar Sprint de 45 minutos (via API Gateway)
   const handleStartSprint = async (e) => {
     e.preventDefault();
     if (!topic.trim()) return;
@@ -141,6 +203,8 @@ export default function Timer({ userSession, onSprintComplete }) {
     setTabSwitches(0);
     setRestoredNotice(false);
     setAbandonedNotice(false);
+    setReviewingTask(false);
+    setTaskOutcome(null);
 
     const startTime = Date.now();
     sprintStartRef.current = startTime;
@@ -155,7 +219,6 @@ export default function Timer({ userSession, onSprintComplete }) {
       if (data?.session?.id) {
         setSessionId(data.session.id);
 
-        // Guarda o sprint ativo no localStorage para persistência a F5/reloads
         const activeData = {
           sessionId: data.session.id,
           topic: topic.trim(),
@@ -170,23 +233,34 @@ export default function Timer({ userSession, onSprintComplete }) {
     }
   };
 
-  // Concluir Sprint com Sucesso (via API Gateway)
-  const handleCompleteSprint = async () => {
+  // 6. Momento em que o relógio bate 00:00 -> Toca o Sino e Abre a Avaliação Dopaminérgica
+  const handleSprintZeroReached = () => {
     clearInterval(timerIntervalRef.current);
     setIsActive(false);
-    localStorage.removeItem(STORAGE_KEY_ACTIVE_SPRINT);
-    setRestoredNotice(false);
 
-    // Efeito de celebração
-    try {
-      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-    } catch (e) {}
+    // Toca o sino tibetano de finalização!
+    playMeditationBell();
 
     if (audioRef.current) {
       audioRef.current.pause();
       setAudioPlaying(false);
     }
 
+    // Abre o ecrã de fecho da tarefa antes de avançar para a celebração final
+    setReviewingTask(true);
+  };
+
+  // 7. Confirmação do Fecho da Tarefa com Efeito Riscado e Confetes
+  const handleConfirmTaskOutcome = async (outcome) => {
+    setTaskOutcome(outcome);
+    localStorage.removeItem(STORAGE_KEY_ACTIVE_SPRINT);
+
+    // Efeito de celebração dopaminérgica
+    try {
+      confetti({ particleCount: 110, spread: 80, origin: { y: 0.6 } });
+    } catch (e) {}
+
+    // Grava conclusão na base de dados
     if (sessionId) {
       try {
         await apiSessionsUpdate(sessionId, { status: 'completed' });
@@ -195,12 +269,16 @@ export default function Timer({ userSession, onSprintComplete }) {
       }
     }
 
-    if (onSprintComplete) {
-      onSprintComplete({ topic, duration: 45 });
-    }
+    // Aguarda 1.2 segundos para o utilizador ver a tarefa riscada com satisfação
+    setTimeout(() => {
+      setReviewingTask(false);
+      if (onSprintComplete) {
+        onSprintComplete({ topic, duration: 45, outcome });
+      }
+    }, 1200);
   };
 
-  // Cancelar Sprint (via API Gateway)
+  // 8. Cancelar Sprint (via API Gateway)
   const handleCancelSprint = async () => {
     if (!confirm('Tens a certeza que queres desistir deste Sprint de 45 minutos? A tua sequência será afetada.')) {
       return;
@@ -226,12 +304,28 @@ export default function Timer({ userSession, onSprintComplete }) {
     }
   };
 
-  const toggleLoFiAudio = () => {
+  // Gestão dos Sons Ambiente
+  const currentSound = AMBIENT_SOUNDS.find((s) => s.id === selectedSoundId) || AMBIENT_SOUNDS[0];
+
+  const handleSelectSound = (soundId) => {
+    setSelectedSoundId(soundId);
+    if (audioPlaying && audioRef.current) {
+      audioRef.current.pause();
+      const sound = AMBIENT_SOUNDS.find((s) => s.id === soundId);
+      if (sound) {
+        audioRef.current.src = sound.src;
+        audioRef.current.play().catch(() => {});
+      }
+    }
+  };
+
+  const toggleSound = () => {
     if (!audioRef.current) return;
     if (audioPlaying) {
       audioRef.current.pause();
       setAudioPlaying(false);
     } else {
+      audioRef.current.src = currentSound.src;
       audioRef.current.play().catch(() => {});
       setAudioPlaying(true);
     }
@@ -248,41 +342,96 @@ export default function Timer({ userSession, onSprintComplete }) {
       
       {/* Alerta de sessão recuperada pós-refresh/reabertura */}
       {restoredNotice && isActive && (
-        <div className="mb-4 rounded-xl bg-indigo-50 p-3 text-xs text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-900 dark:text-indigo-300 flex items-center justify-between">
+        <div className="mb-4 rounded-xl bg-indigo-50 p-3 text-xs text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-900 dark:text-indigo-300 flex items-center justify-between animate-fade-in">
           <span>Sessão recuperada! Continuas no teu Sprint de 45 minutos.</span>
           <button
             type="button"
             onClick={() => setRestoredNotice(false)}
-            className="text-indigo-500 hover:text-indigo-700 font-bold ml-2"
+            className="text-indigo-500 hover:text-indigo-700 font-semibold text-xs ml-2"
           >
-            ✕
+            Fechar
           </button>
         </div>
       )}
 
       {/* Alerta de sessão anterior cancelada por abandono */}
       {abandonedNotice && !isActive && (
-        <div className="mb-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-900 dark:text-amber-300 flex items-center justify-between">
+        <div className="mb-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-900 dark:text-amber-300 flex items-center justify-between animate-fade-in">
           <span>O teu Sprint anterior foi cancelado por abandono antes da conclusão.</span>
           <button
             type="button"
             onClick={() => setAbandonedNotice(false)}
-            className="text-amber-600 hover:text-amber-800 font-bold ml-2"
+            className="text-amber-600 hover:text-amber-800 font-semibold text-xs ml-2"
           >
-            ✕
+            Fechar
           </button>
         </div>
       )}
 
-      {/* Áudio Lo-Fi de Foco (Reciprocidade de Cialdini) */}
-      <audio
-        ref={audioRef}
-        loop
-        src="https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3"
-      />
+      {/* Áudio Ambiente */}
+      <audio ref={audioRef} loop src={currentSound.src} />
 
-      {/* Antes de Iniciar o Sprint: Declaração de Compromisso */}
-      {!isActive ? (
+      {/* ======================================================== */}
+      {/* ESTADO 1: ECRÃ DE AVALIAÇÃO DOPAMINÉRGICA PÓS-SPRINT    */}
+      {/* ======================================================== */}
+      {reviewingTask ? (
+        <div className="space-y-6 py-4 animate-scale-up">
+          <div className="space-y-2">
+            <span className="inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+              45 minutos cumpridos
+            </span>
+            <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
+              Sino de Conclusão!
+            </h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              Conseguiste cumprir o teu objetivo?
+            </p>
+
+            <div
+              className={`text-lg font-semibold px-4 py-2 rounded-xl border transition-all ${
+                taskOutcome
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800 line-through dark:bg-emerald-950/40 dark:text-emerald-300'
+                  : 'border-zinc-200 bg-zinc-50 text-zinc-800 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-200'
+              }`}
+            >
+              {topic}
+            </div>
+          </div>
+
+          {!taskOutcome ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => handleConfirmTaskOutcome('concluido')}
+                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-3 text-xs transition shadow-sm active:scale-95"
+              >
+                Sim, com sucesso
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmTaskOutcome('parcial')}
+                className="rounded-xl border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 font-semibold py-3 px-3 text-xs transition active:scale-95"
+              >
+                Parcialmente
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmTaskOutcome('mais_tempo')}
+                className="rounded-xl border border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 font-semibold py-3 px-3 text-xs transition active:scale-95"
+              >
+                Preciso de mais tempo
+              </button>
+            </div>
+          ) : (
+            <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 animate-pulse py-2">
+              Tarefa registada! A guardar progresso...
+            </div>
+          )}
+        </div>
+      ) : !isActive ? (
+        /* ======================================================== */
+        /* ESTADO 2: ANTES DE INICIAR O SPRINT                      */
+        /* ======================================================== */
         <form onSubmit={handleStartSprint} className="space-y-6">
           <div className="text-left space-y-2">
             <label htmlFor="topic" className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
@@ -299,9 +448,36 @@ export default function Timer({ userSession, onSprintComplete }) {
             />
           </div>
 
+          {/* Micro-compromissos pré-Sprint (Gatilho de Intenção de Gollwitzer) */}
+          <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 p-3.5 dark:border-zinc-800 dark:bg-zinc-800/40 text-left space-y-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Checklist de Foco Profundo
+            </span>
+            <div className="space-y-1.5 text-xs">
+              <label className="flex items-center gap-2.5 cursor-pointer text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={phoneCheck}
+                  onChange={(e) => setPhoneCheck(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <span>Telemóvel virado para baixo ou noutra divisão</span>
+              </label>
+              <label className="flex items-center gap-2.5 cursor-pointer text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={waterCheck}
+                  onChange={(e) => setWaterCheck(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <span>Água por perto e sem abas de redes sociais abertas</span>
+              </label>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 px-1">
             <span>Duração: <strong>45 min</strong></span>
-            <span>Sem distrações de telemóvel</span>
+            <span>Sino de conclusão automático</span>
           </div>
 
           <button
@@ -312,7 +488,9 @@ export default function Timer({ userSession, onSprintComplete }) {
           </button>
         </form>
       ) : (
-        /* Durante o Sprint Ativo */
+        /* ======================================================== */
+        /* ESTADO 3: DURANTE O SPRINT ATIVO                         */
+        /* ======================================================== */
         <div className="space-y-6">
           <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -345,20 +523,42 @@ export default function Timer({ userSession, onSprintComplete }) {
             </div>
           )}
 
-          {/* Controlos e Ferramenta de Suporte Gratuita */}
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <button
-              type="button"
-              onClick={toggleLoFiAudio}
-              className={`rounded-xl px-4 py-2 text-xs font-semibold border transition flex items-center gap-2 ${
-                audioPlaying
-                  ? 'border-indigo-600 bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50'
-                  : 'border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800'
-              }`}
-            >
-               {audioPlaying ? 'Pausar Som Lo-Fi' : 'Ativar Som Lo-Fi Gratuito'}
-            </button>
+          {/* Seletor de Sons Ambiente (Lo-Fi, Chuva, Café) */}
+          <div className="rounded-2xl border border-zinc-200/80 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 px-1">
+              <span>Som Ambiente de Foco:</span>
+              <button
+                type="button"
+                onClick={toggleSound}
+                className="text-indigo-600 dark:text-indigo-400 hover:underline font-bold"
+              >
+                {audioPlaying ? 'Pausar Som' : 'Tocar Som'}
+              </button>
+            </div>
 
+            <div className="grid grid-cols-3 gap-2">
+              {AMBIENT_SOUNDS.map((sound) => {
+                const isSelected = selectedSoundId === sound.id;
+                return (
+                  <button
+                    key={sound.id}
+                    type="button"
+                    onClick={() => handleSelectSound(sound.id)}
+                    className={`rounded-xl px-2 py-2 text-xs font-medium border transition flex items-center justify-center gap-1.5 ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-700 font-bold dark:bg-indigo-950/60 dark:text-indigo-300'
+                        : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                    }`}
+                  >
+                    <span className="truncate">{sound.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Desistir do Sprint */}
+          <div className="pt-2">
             <button
               type="button"
               onClick={handleCancelSprint}

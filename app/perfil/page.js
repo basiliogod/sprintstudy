@@ -1,5 +1,6 @@
 // Rota '/perfil' que serve como página de perfil do utilizador
 // VIEW desacoplada: consome dados prontos do API Gateway (/api/profile)
+// Inclui Alerta de Urgência de Streak, Congeladores (Streak Freeze) e Gráfico Semanal
 
 'use client';
 
@@ -19,6 +20,12 @@ export default function ProfilePage() {
     totalMinutes: 0,
     streak: 0,
     focusLevel: 'Iniciante do Foco',
+    studiedToday: false,
+    streakExpiresToday: false,
+    weeklyBreakdown: [],
+    thisWeekSprints: 0,
+    streakFreezes: 0,
+    nextFreezeProgress: 0,
   });
 
   useEffect(() => {
@@ -39,7 +46,7 @@ export default function ProfilePage() {
         }
 
         if (data?.stats) {
-          setStats(data.stats);
+          setStats((prev) => ({ ...prev, ...data.stats }));
         }
 
         if (Array.isArray(data?.sessions)) {
@@ -73,6 +80,12 @@ export default function ProfilePage() {
       </div>
     );
   }
+
+  // Encontra o dia com mais minutos na semana para calibrar a escala das barras
+  const maxWeeklyMinutes = Math.max(
+    135,
+    ...(stats.weeklyBreakdown?.map((d) => d.minutes) || [135])
+  );
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:py-12 space-y-8">
@@ -115,17 +128,34 @@ export default function ProfilePage() {
 
       {/* Cartões de Estatísticas / Gamificação */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Streak / Sequência Diária */}
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 text-center dark:border-zinc-800 dark:bg-zinc-900 shadow-xs">
+        {/* Streak / Sequência Diária (com indicador de urgência) */}
+        <div
+          className={`rounded-2xl border p-5 text-center shadow-xs transition ${
+            stats.streakExpiresToday
+              ? 'border-orange-300 bg-orange-50/50 dark:border-orange-900/60 dark:bg-orange-950/20'
+              : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900'
+          }`}
+        >
           <div className="text-3xl font-extrabold text-orange-500 flex items-center justify-center gap-1.5">
-             {stats.streak}
+            {stats.streak}
           </div>
           <div className="mt-1 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
             Dias de Sequência (Streak)
           </div>
-          <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-            Mantém o ritmo diário sem resetar
-          </div>
+
+          {stats.streakExpiresToday ? (
+            <div className="mt-1.5 inline-block rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-800 dark:bg-orange-900/60 dark:text-orange-200 animate-pulse">
+              Expira hoje às 23:59!
+            </div>
+          ) : stats.studiedToday && stats.streak > 0 ? (
+            <div className="mt-1.5 inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">
+              Seguro hoje
+            </div>
+          ) : (
+            <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+              Mantém o ritmo diário sem resetar
+            </div>
+          )}
         </div>
 
         {/* Minutos Totais de Foco */}
@@ -151,6 +181,102 @@ export default function ProfilePage() {
           </div>
           <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
             Blocos completos validados
+          </div>
+        </div>
+      </div>
+
+      {/* Cartão de Proteção: Congeladores de Sequência (Streak Freeze) */}
+      <div className="rounded-3xl border border-sky-200/80 bg-sky-50/60 p-5 sm:p-6 dark:border-sky-900/40 dark:bg-sky-950/20 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-sky-950 dark:text-sky-200">
+              Congeladores de Sequência (Streak Freeze)
+            </h3>
+            <span className="rounded-full bg-sky-200/70 px-2 py-0.5 text-xs font-extrabold text-sky-800 dark:bg-sky-900 dark:text-sky-200">
+              {stats.streakFreezes} {stats.streakFreezes === 1 ? 'disponível' : 'disponíveis'}
+            </span>
+          </div>
+          <p className="text-xs text-sky-800/80 dark:text-sky-300/80">
+            Completa 5 sprints numa semana para ganhar 1 congelador que protege a tua sequência se falhares um dia.
+          </p>
+        </div>
+
+        <div className="w-full sm:w-48 space-y-1 text-right">
+          <div className="flex justify-between text-[11px] font-bold text-sky-900 dark:text-sky-300">
+            <span>Progresso semanal</span>
+            <span>{stats.nextFreezeProgress} / 5 sprints</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-sky-200 dark:bg-sky-900/60">
+            <div
+              className="h-full bg-sky-600 transition-all duration-500 rounded-full"
+              style={{ width: `${(stats.nextFreezeProgress / 5) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Gráfico Semanal de Barras: Segunda a Domingo */}
+      <div className="rounded-3xl border border-zinc-200 bg-white p-6 sm:p-8 dark:border-zinc-800 dark:bg-zinc-900 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-white">
+              Foco Semanal (Segunda a Domingo)
+            </h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Minutos de estudo acumulados em cada dia da semana atual
+            </p>
+          </div>
+          <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg">
+            Semana Atual
+          </span>
+        </div>
+
+        {/* Visualização das Barras de Seg a Dom */}
+        <div className="pt-6 pb-2">
+          <div className="grid grid-cols-7 gap-2 sm:gap-4 items-end h-40">
+            {stats.weeklyBreakdown?.map((dayData) => {
+              const heightPercent =
+                dayData.minutes > 0
+                  ? Math.max(15, (dayData.minutes / maxWeeklyMinutes) * 100)
+                  : 4;
+
+              return (
+                <div
+                  key={dayData.day}
+                  className="flex flex-col items-center justify-end h-full gap-2 group"
+                >
+                  {/* Minutos no topo da barra */}
+                  <span className="text-[10px] sm:text-xs font-mono font-semibold text-zinc-500 dark:text-zinc-400">
+                    {dayData.minutes > 0 ? `${dayData.minutes}m` : '0'}
+                  </span>
+
+                  {/* Barra Vertical */}
+                  <div className="w-full max-w-[36px] bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden flex flex-col justify-end h-28">
+                    <div
+                      className={`w-full transition-all duration-700 rounded-xl ${
+                        dayData.isToday
+                          ? 'bg-indigo-600 shadow-sm shadow-indigo-600/30'
+                          : dayData.minutes > 0
+                          ? 'bg-indigo-400/80 dark:bg-indigo-500/70'
+                          : 'bg-transparent'
+                      }`}
+                      style={{ height: `${heightPercent}%` }}
+                    />
+                  </div>
+
+                  {/* Rótulo do Dia */}
+                  <span
+                    className={`text-[11px] sm:text-xs font-bold ${
+                      dayData.isToday
+                        ? 'text-indigo-600 dark:text-indigo-400 underline underline-offset-4 decoration-2'
+                        : 'text-zinc-600 dark:text-zinc-400'
+                    }`}
+                  >
+                    {dayData.day}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -197,7 +323,7 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-2">
                     {session.status === 'completed' ? (
                       <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400">
-                        +45 min ✓
+                        +45 min
                       </span>
                     ) : session.status === 'cancelled' ? (
                       <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-400">

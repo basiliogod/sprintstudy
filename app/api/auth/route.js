@@ -5,6 +5,8 @@ import {
   clearSessionCookie,
 } from '@/lib/sessionCookie';
 import { login, register, initGuestSession } from '@/services/authService';
+import { getUserSessions } from '@/models/sessionModel';
+import { calculateUserStats } from '@/services/metricsService';
 
 /**
  * API Gateway / Controller: /api/auth
@@ -33,6 +35,12 @@ export async function GET(req) {
       });
     }
 
+    let stats = null;
+    try {
+      const sessions = await getUserSessions(session.userId);
+      stats = calculateUserStats(sessions);
+    } catch (e) {}
+
     return NextResponse.json({
       user: {
         id: session.userId,
@@ -40,6 +48,15 @@ export async function GET(req) {
         abGroup: session.abGroup || 'A',
         isGuest: !!session.isGuest,
       },
+      stats: stats
+        ? {
+            streak: stats.streak,
+            streakExpiresToday: stats.streakExpiresToday,
+            studiedToday: stats.studiedToday,
+            streakFreezes: stats.streakFreezes,
+            nextFreezeProgress: stats.nextFreezeProgress,
+          }
+        : null,
     });
   } catch (err) {
     if (err?.digest === 'NEXT_PRERENDER_INTERRUPTED') throw err;

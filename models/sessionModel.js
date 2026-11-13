@@ -93,7 +93,32 @@ export async function getUserSessions(userId) {
     throw error;
   }
 
-  return data || [];
+  const sessions = data || [];
+  const now = Date.now();
+
+  // Sessões iniciadas cujo tempo de 45 min já expirou sem conclusão são tratadas como abandono/desistência
+  for (const s of sessions) {
+    if (s.status === 'started') {
+      const startedTime = new Date(s.started_at).getTime();
+      const elapsedMinutes = (now - startedTime) / (1000 * 60);
+      const sessionDuration = s.duration_minutes || 45;
+
+      if (elapsedMinutes > sessionDuration + 5) {
+        s.status = 'cancelled';
+        s.completed_at = new Date(startedTime + sessionDuration * 60 * 1000).toISOString();
+
+        // Atualiza na base de dados de forma assíncrona
+        updateSessionStatus(s.id, {
+          status: 'cancelled',
+          completedAt: s.completed_at,
+        }).catch((err) => {
+          console.error('Falha ao auto-cancelar sessão abandonada:', err);
+        });
+      }
+    }
+  }
+
+  return sessions;
 }
 
 export async function getActiveSessionsCount() {

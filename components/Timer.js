@@ -1,5 +1,6 @@
 // Temporizador de 45 minutos para sessão de estudo
 // VIEW desacoplada: comunica exclusivamente com o API Gateway (/api/sessions)
+// Suporta recuperação pós-refresh (F5), proteção beforeunload e auto-cancelamento por abandono
 
 'use client';
 
@@ -8,6 +9,7 @@ import { apiSessionsStart, apiSessionsUpdate } from '@/lib/apiClient';
 import confetti from 'canvas-confetti';
 
 const SPRINT_DURATION_SECONDS = 45 * 60; // 45 minutos fixos (Efeito Ancoragem)
+const STORAGE_KEY_ACTIVE_SPRINT = 'studysprint_active_sprint';
 
 export default function Timer({ userSession, onSprintComplete }) {
   const [topic, setTopic] = useState('');
@@ -17,28 +19,114 @@ export default function Timer({ userSession, onSprintComplete }) {
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [tabSwitches, setTabSwitches] = useState(0);
 
+  // Notificações visuais de estado
+  const [restoredNotice, setRestoredNotice] = useState(false);
+  const [abandonedNotice, setAbandonedNotice] = useState(false);
+
   const audioRef = useRef(null);
   const timerIntervalRef = useRef(null);
+  const sprintStartRef = useRef(null);
 
-  // Detetar perda de foco (mudança de separador) para dissuadir distrações
+  // 1. Restaurar sessão ativa do localStorage ao carregar/recarregar a página
+  useEffect(() => {
+    try {
+      const savedSprint = localStorage.getItem(STORAGE_KEY_ACTIVE_SPRINT);
+      if (savedSprint) {
+        const parsed = JSON.parse(savedSprint);
+        const now = Date.now();
+        const elapsedSeconds = Math.floor((now - parsed.startTime) / 1000);
+        const durationSeconds = parsed.durationSeconds || SPRINT_DURATION_SECONDS;
+        const remainingSeconds = durationSeconds - elapsedSeconds;
+
+        if (remainingSeconds > 0) {
+          // --- SESSÃO ATIVA DETETADA: RETOMA O TIMER DO SEGUNDO EXATO ---
+          setSessionId(parsed.sessionId);
+          setTopic(parsed.topic);
+          setTimeLeft(remainingSeconds);
+          sprintStartRef.current = parsed.startTime;
+          setIsActive(true);
+
+          // Contabiliza a recarga/saída como distração
+          const nextSwitches = (parsed.tabSwitches || 0) + 1;
+          setTabSwitches(nextSwitches);
+          setRestoredNotice(true);
+
+          localStorage.setItem(
+            STORAGE_KEY_ACTIVE_SPRINT,
+            JSON.stringify({ ...parsed, tabSwitches: nextSwitches })
+          );
+        } else {
+          // --- TEMPO EXPIROU COM A PÁGINA FECHADA: ABANDONO DO SPRINT ---
+          apiSessionsUpdate(parsed.sessionId, { status: 'cancelled' }).catch(() => {});
+          localStorage.removeItem(STORAGE_KEY_ACTIVE_SPRINT);
+          setAbandonedNotice(true);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao verificar sprint guardado:', err);
+    }
+  }, []);
+
+  // 2. Proteger contra fecho ou recarregamento acidental (Aviso nativo do Browser)
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (isActive) {
+        e.preventDefault();
+        e.returnValue = ''; // Ativa o popup de confirmação de saída do navegador
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isActive]);
+
+  // 3. Detetar perda de foco (mudança de separador) para dissuadir distrações
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden && isActive) {
-        setTabSwitches((prev) => prev + 1);
+        setTabSwitches((prev) => {
+          const next = prev + 1;
+          try {
+            const saved = localStorage.getItem(STORAGE_KEY_ACTIVE_SPRINT);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              localStorage.setItem(
+                STORAGE_KEY_ACTIVE_SPRINT,
+                JSON.stringify({ ...parsed, tabSwitches: next })
+              );
+            }
+          } catch (e) {}
+          return next;
+        });
       }
     };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [isActive]);
 
-  // Contagem decrescente do temporizador
+  // 4. Contagem decrescente sincronizada com tempo real
   useEffect(() => {
     if (isActive && timeLeft > 0) {
       timerIntervalRef.current = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
+        if (sprintStartRef.current) {
+          const elapsed = Math.floor((Date.now() - sprintStartRef.current) / 1000);
+          const remaining = Math.max(0, SPRINT_DURATION_SECONDS - elapsed);
+          setTimeLeft(remaining);
+
+          if (remaining === 0) {
+            handleCompleteSprint();
+          }
+        } else {
+          setTimeLeft((prev) => {
+            if (prev <= 1) {
+              handleCompleteSprint();
+              return 0;
+            }
+            return prev - 1;
+          });
+        }
       }, 1000);
-    } else if (timeLeft === 0 && isActive) {
-      handleCompleteSprint();
     }
 
     return () => clearInterval(timerIntervalRef.current);
@@ -51,6 +139,12 @@ export default function Timer({ userSession, onSprintComplete }) {
 
     setIsActive(true);
     setTabSwitches(0);
+    setRestoredNotice(false);
+    setAbandonedNotice(false);
+
+    const startTime = Date.now();
+    sprintStartRef.current = startTime;
+    setTimeLeft(SPRINT_DURATION_SECONDS);
 
     try {
       const data = await apiSessionsStart({
@@ -60,6 +154,16 @@ export default function Timer({ userSession, onSprintComplete }) {
 
       if (data?.session?.id) {
         setSessionId(data.session.id);
+
+        // Guarda o sprint ativo no localStorage para persistência a F5/reloads
+        const activeData = {
+          sessionId: data.session.id,
+          topic: topic.trim(),
+          startTime,
+          durationSeconds: SPRINT_DURATION_SECONDS,
+          tabSwitches: 0,
+        };
+        localStorage.setItem(STORAGE_KEY_ACTIVE_SPRINT, JSON.stringify(activeData));
       }
     } catch (err) {
       console.error('Erro ao registar início de sessão via API Gateway:', err);
@@ -70,6 +174,8 @@ export default function Timer({ userSession, onSprintComplete }) {
   const handleCompleteSprint = async () => {
     clearInterval(timerIntervalRef.current);
     setIsActive(false);
+    localStorage.removeItem(STORAGE_KEY_ACTIVE_SPRINT);
+    setRestoredNotice(false);
 
     // Efeito de celebração
     try {
@@ -103,6 +209,8 @@ export default function Timer({ userSession, onSprintComplete }) {
     clearInterval(timerIntervalRef.current);
     setIsActive(false);
     setTimeLeft(SPRINT_DURATION_SECONDS);
+    localStorage.removeItem(STORAGE_KEY_ACTIVE_SPRINT);
+    setRestoredNotice(false);
 
     if (audioRef.current) {
       audioRef.current.pause();
@@ -138,6 +246,34 @@ export default function Timer({ userSession, onSprintComplete }) {
   return (
     <div className="w-full max-w-xl mx-auto rounded-3xl border border-zinc-200 bg-white p-6 sm:p-10 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 text-center">
       
+      {/* Alerta de sessão recuperada pós-refresh/reabertura */}
+      {restoredNotice && isActive && (
+        <div className="mb-4 rounded-xl bg-indigo-50 p-3 text-xs text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-900 dark:text-indigo-300 flex items-center justify-between">
+          <span>Sessão recuperada! Continuas no teu Sprint de 45 minutos.</span>
+          <button
+            type="button"
+            onClick={() => setRestoredNotice(false)}
+            className="text-indigo-500 hover:text-indigo-700 font-bold ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Alerta de sessão anterior cancelada por abandono */}
+      {abandonedNotice && !isActive && (
+        <div className="mb-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-900 dark:text-amber-300 flex items-center justify-between">
+          <span>O teu Sprint anterior foi cancelado por abandono antes da conclusão.</span>
+          <button
+            type="button"
+            onClick={() => setAbandonedNotice(false)}
+            className="text-amber-600 hover:text-amber-800 font-bold ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Áudio Lo-Fi de Foco (Reciprocidade de Cialdini) */}
       <audio
         ref={audioRef}

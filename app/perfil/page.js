@@ -1,10 +1,11 @@
 // Rota '/perfil' que serve como página de perfil do utilizador
-// Irá conter estatísticas de estudo, histórico de sessões, progresso e streak
+// VIEW desacoplada: consome dados prontos do API Gateway (/api/profile)
+
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { apiProfileGet, apiAuthPost } from '@/lib/apiClient';
 import Link from 'next/link';
 
 export default function ProfilePage() {
@@ -24,122 +25,44 @@ export default function ProfilePage() {
     async function loadUserData() {
       setLoading(true);
 
-      const storedUser = localStorage.getItem('studysprint_username');
-      setUsername(storedUser);
+      try {
+        const data = await apiProfileGet();
 
-      // Obter utilizador autenticado atual (anónimo ou registado)
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const currentUserId =
-        session?.user?.id || localStorage.getItem('studysprint_user_id');
-
-      if (!currentUserId) {
-        setLoading(false);
-        return;
-      }
-
-      // Se ainda não temos username no state mas o utilizador já tem perfil registado
-      if (!storedUser) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('username')
-          .eq('id', currentUserId)
-          .maybeSingle();
-
-        if (userData?.username) {
-          setUsername(userData.username);
-          localStorage.setItem('studysprint_username', userData.username);
+        if (data?.user) {
+          setUsername(data.user.username);
+          if (data.user.username) {
+            localStorage.setItem('studysprint_username', data.user.username);
+          }
+          if (data.user.id) {
+            localStorage.setItem('studysprint_user_id', data.user.id);
+          }
         }
+
+        if (data?.stats) {
+          setStats(data.stats);
+        }
+
+        if (Array.isArray(data?.sessions)) {
+          setSessions(data.sessions);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar perfil via API Gateway:', err);
+      } finally {
+        setLoading(false);
       }
-
-      // Procurar sessões do utilizador
-      const { data: userSessions, error } = await supabase
-        .from('sessions')
-        .select('*')
-        .eq('user_id', currentUserId)
-        .order('started_at', { ascending: false });
-
-      if (error) {
-        console.error('Erro ao carregar sessões:', error);
-      } else if (userSessions) {
-        setSessions(userSessions);
-        computeStatistics(userSessions);
-      }
-
-      setLoading(false);
     }
 
     loadUserData();
   }, []);
 
-  // Calcular métricas, Streak diário e Nível de Foco
-  const computeStatistics = (sessionList) => {
-    const completed = sessionList.filter((s) => s.status === 'completed');
-    const completedCount = completed.length;
-    const totalMinutes = completed.reduce(
-      (acc, s) => acc + (s.duration_minutes || 45),
-      0
-    );
-
-    // 1. Cálculo da Sequência Diária (Streak)
-    // Agrupar dias únicos em que houve pelo menos uma sessão completada
-    const uniqueDays = Array.from(
-      new Set(
-        completed.map((s) =>
-          new Date(s.completed_at || s.started_at).toISOString().split('T')[0]
-        )
-      )
-    ).sort((a, b) => new Date(b) - new Date(a)); // Mais recente para mais antigo
-
-    let streak = 0;
-    if (uniqueDays.length > 0) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-      // O streak está ativo se estudou hoje ou se estudou ontem
-      let checkDate = new Date();
-      if (!uniqueDays.includes(todayStr) && uniqueDays.includes(yesterdayStr)) {
-        checkDate = yesterday;
-      }
-
-      for (const dayStr of uniqueDays) {
-        const expectedStr = checkDate.toISOString().split('T')[0];
-        if (dayStr === expectedStr) {
-          streak++;
-          checkDate.setDate(checkDate.getDate() - 1);
-        } else {
-          break;
-        }
-      }
-    }
-
-    // 2. Cálculo do Nível de Foco 
-    let focusLevel = 'Novato do Foco';
-    if (totalMinutes >= 450) {
-      focusLevel = 'Mestre do Estudo';
-    } else if (totalMinutes >= 225) {
-      focusLevel = 'Estudante Focado';
-    } else if (totalMinutes >= 90) {
-      focusLevel = 'Explorador Consistente';
-    } else if (totalMinutes >= 45) {
-      focusLevel = 'Iniciante do Foco';
-    }
-
-    setStats({
-      completedCount,
-      totalMinutes,
-      streak,
-      focusLevel,
-    });
-  };
-
   const handleLogout = async () => {
+    try {
+      await apiAuthPost({ action: 'logout' });
+    } catch (e) {
+      console.error('Erro ao terminar sessão:', e);
+    }
     localStorage.removeItem('studysprint_username');
     localStorage.removeItem('studysprint_user_id');
-    await supabase.auth.signOut();
     router.push('/login');
   };
 

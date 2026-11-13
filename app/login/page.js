@@ -1,20 +1,11 @@
-// Rota '/login' que serve como página de login do utilizador
-// Formulário de login ou register com username e senha
+// Rota '/login' que serve como página de login/registo do utilizador
+// VIEW desacoplada: comunica exclusivamente com o API Gateway (/api/auth)
 
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
-
-// Função utilitária para encriptar password no browser
-async function hashPassword(plainTextPassword) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(plainTextPassword);
-  const hashBuffer = await window.crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+import { apiAuthGet, apiAuthPost } from "@/lib/apiClient";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,30 +16,18 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Verificar se o utilizador já está logado com username
+  // Verificar se o utilizador já está logado
   useEffect(() => {
     async function checkExistingAuth() {
-      const storedUser = localStorage.getItem("studysprint_username");
-      if (storedUser) {
-        router.push("/perfil");
-        return;
-      }
-
-      // Se já existir conta associada ao auth.uid() atual
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data: userData } = await supabase
-          .from("users")
-          .select("username")
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        if (userData?.username) {
-          localStorage.setItem("studysprint_username", userData.username);
+      try {
+        const data = await apiAuthGet();
+        if (data?.user?.username) {
+          localStorage.setItem("studysprint_username", data.user.username);
+          localStorage.setItem("studysprint_user_id", data.user.id);
           router.push("/perfil");
         }
+      } catch (err) {
+        console.error("Erro ao verificar autenticação prévia:", err);
       }
     }
 
@@ -68,85 +47,30 @@ export default function LoginPage() {
     }
 
     try {
-      // Encriptar a password com SHA-256
-      const hashedPassword = await hashPassword(password);
+      const action = isRegister ? "register" : "login";
+      const result = await apiAuthPost({
+        action,
+        username: cleanUsername,
+        password,
+      });
 
-      if (isRegister) {
-        // --- FLUXO DE REGISTO ---
-        // Verificar se o username já está em uso
-        const { data: existingUser } = await supabase
-          .from("users")
-          .select("id")
-          .eq("username", cleanUsername)
-          .maybeSingle();
+      if (result.error) {
+        setErrorMsg(result.error);
+        setLoading(false);
+        return;
+      }
 
-        if (existingUser) {
-          setErrorMsg("Este username já está escolhido. Escolhe outro.");
-          setLoading(false);
-          return;
+      if (result.success && result.user) {
+        localStorage.setItem("studysprint_username", result.user.username);
+        localStorage.setItem("studysprint_user_id", result.user.id);
+        if (result.user.abGroup) {
+          localStorage.setItem("studysprint_ab_group", result.user.abGroup);
         }
-
-        // Obter ou criar sessão anónima do utilizador atual
-        let {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.user) {
-          const { data: authData } = await supabase.auth.signInAnonymously();
-          session = authData?.session;
-        }
-
-        const currentUserId = session?.user?.id;
-        const abGroup =
-          localStorage.getItem("studysprint_ab_group") ||
-          (Math.random() < 0.5 ? "A" : "B");
-
-        // Atualizar ou inserir na tabela users
-        const { error: upsertError } = await supabase.from("users").upsert({
-          id: currentUserId,
-          username: cleanUsername,
-          password: hashedPassword,
-          ab_group: abGroup,
-        });
-
-        if (upsertError) {
-          throw upsertError;
-        }
-
-        localStorage.setItem("studysprint_username", cleanUsername);
-        router.push("/perfil");
-      } else {
-        // --- FLUXO DE LOGIN ---
-        const { data: userFound, error: loginError } = await supabase
-          .from("users")
-          .select("id, username, password, ab_group")
-          .eq("username", cleanUsername)
-          .maybeSingle();
-
-        if (loginError || !userFound) {
-          setErrorMsg("Utilizador não encontrado.");
-          setLoading(false);
-          return;
-        }
-
-        // Comparar o hash da password introduzida com o hash na base de dados
-        if (userFound.password !== hashedPassword) {
-          setErrorMsg("Palavra-passe incorreta.");
-          setLoading(false);
-          return;
-        }
-
-        // Guardar a sessão localmente
-        localStorage.setItem("studysprint_username", userFound.username);
-        localStorage.setItem("studysprint_user_id", userFound.id);
-        if (userFound.ab_group) {
-          localStorage.setItem("studysprint_ab_group", userFound.ab_group);
-        }
-
         router.push("/perfil");
       }
     } catch (err) {
-      console.error("Erro na autenticação:", err);
-      setErrorMsg("Ocorreu um erro. Tenta novamente.");
+      console.error("Erro na autenticação via API Gateway:", err);
+      setErrorMsg("Ocorreu um erro no servidor. Tenta novamente.");
     } finally {
       setLoading(false);
     }

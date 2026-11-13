@@ -1,4 +1,5 @@
 // Barra de navegação simples (Home, Perfil, Login)
+// VIEW desacoplada: sincroniza estado de utilizador com o API Gateway (/api/auth)
 
 'use client';
 
@@ -6,17 +7,30 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { apiAuthGet } from '@/lib/apiClient';
 
 export default function Navbar() {
   const pathname = usePathname();
   const [username, setUsername] = useState(null);
 
   useEffect(() => {
-    // Ler o username guardado localmente
     const storedUsername = localStorage.getItem('studysprint_username');
     if (storedUsername) {
       setUsername(storedUsername);
     }
+
+    // Valida também com o API Gateway
+    apiAuthGet()
+      .then((data) => {
+        if (data?.user?.username) {
+          setUsername(data.user.username);
+          localStorage.setItem('studysprint_username', data.user.username);
+        } else {
+          setUsername(null);
+          localStorage.removeItem('studysprint_username');
+        }
+      })
+      .catch(() => {});
   }, [pathname]);
 
   const navLinks = [

@@ -4,7 +4,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getOrCreateUserSession } from '@/lib/userSession';
+import { getOrCreateUserSession } from '@/lib/apiClient';
 import Timer from '@/components/Timer';
 import SocialProofBanner from '@/components/SocialProofBanner';
 import RegisterModal from '@/components/RegisterModal';

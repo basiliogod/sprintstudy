@@ -1,9 +1,10 @@
 // Temporizador de 45 minutos para sessão de estudo
+// VIEW desacoplada: comunica exclusivamente com o API Gateway (/api/sessions)
 
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { apiSessionsStart, apiSessionsUpdate } from '@/lib/apiClient';
 import confetti from 'canvas-confetti';
 
 const SPRINT_DURATION_SECONDS = 45 * 60; // 45 minutos fixos (Efeito Ancoragem)
@@ -43,7 +44,7 @@ export default function Timer({ userSession, onSprintComplete }) {
     return () => clearInterval(timerIntervalRef.current);
   }, [isActive, timeLeft]);
 
-  // Iniciar Sprint de 45 minutos (Grava 'started' na BD)
+  // Iniciar Sprint de 45 minutos (via API Gateway)
   const handleStartSprint = async (e) => {
     e.preventDefault();
     if (!topic.trim()) return;
@@ -52,29 +53,20 @@ export default function Timer({ userSession, onSprintComplete }) {
     setTabSwitches(0);
 
     try {
-      const { data, error } = await supabase
-        .from('sessions')
-        .insert([
-          {
-            user_id: userSession?.userId,
-            study_topic: topic.trim(),
-            duration_minutes: 45,
-            status: 'started',
-            started_at: new Date().toISOString(),
-          },
-        ])
-        .select('id')
-        .single();
+      const data = await apiSessionsStart({
+        topic: topic.trim(),
+        durationMinutes: 45,
+      });
 
-      if (!error && data) {
-        setSessionId(data.id);
+      if (data?.session?.id) {
+        setSessionId(data.session.id);
       }
     } catch (err) {
-      console.error('Erro ao registar início de sessão:', err);
+      console.error('Erro ao registar início de sessão via API Gateway:', err);
     }
   };
 
-  // Concluir Sprint com Sucesso (Grava 'completed' na BD)
+  // Concluir Sprint com Sucesso (via API Gateway)
   const handleCompleteSprint = async () => {
     clearInterval(timerIntervalRef.current);
     setIsActive(false);
@@ -91,15 +83,9 @@ export default function Timer({ userSession, onSprintComplete }) {
 
     if (sessionId) {
       try {
-        await supabase
-          .from('sessions')
-          .update({
-            status: 'completed',
-            completed_at: new Date().toISOString(),
-          })
-          .eq('id', sessionId);
+        await apiSessionsUpdate(sessionId, { status: 'completed' });
       } catch (err) {
-        console.error('Erro ao atualizar conclusão no Supabase:', err);
+        console.error('Erro ao atualizar conclusão via API Gateway:', err);
       }
     }
 
@@ -108,7 +94,7 @@ export default function Timer({ userSession, onSprintComplete }) {
     }
   };
 
-  // Cancelar Sprint (Grava 'cancelled' na BD para o teste A/B)
+  // Cancelar Sprint (via API Gateway)
   const handleCancelSprint = async () => {
     if (!confirm('Tens a certeza que queres desistir deste Sprint de 45 minutos? A tua sequência será afetada.')) {
       return;
@@ -125,15 +111,9 @@ export default function Timer({ userSession, onSprintComplete }) {
 
     if (sessionId) {
       try {
-        await supabase
-          .from('sessions')
-          .update({
-            status: 'cancelled',
-            completed_at: new Date().toISOString(),
-          })
-          .eq('id', sessionId);
+        await apiSessionsUpdate(sessionId, { status: 'cancelled' });
       } catch (err) {
-        console.error('Erro ao cancelar sessão no Supabase:', err);
+        console.error('Erro ao cancelar sessão via API Gateway:', err);
       }
     }
   };

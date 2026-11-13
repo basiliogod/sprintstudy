@@ -1,9 +1,10 @@
 // Variante persuasiva B (banner com "X colegas a estudar agora")
+// VIEW desacoplada: consome os dados do API Gateway (/api/sessions?activeOnly=true)
 
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { apiSessionsGet } from '@/lib/apiClient';
 
 export default function SocialProofBanner() {
   const [activeCount, setActiveCount] = useState(1);
@@ -11,16 +12,9 @@ export default function SocialProofBanner() {
   useEffect(() => {
     async function fetchRealActiveSessions() {
       try {
-        const fortyFiveMinutesAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
-        const { count, error } = await supabase
-          .from('sessions')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'started')
-          .gte('started_at', fortyFiveMinutesAgo);
-
-        if (!error && count !== null) {
-          // Usa o valor real; se for 0, coloca pelo menos 1 (o próprio utilizador a começar)
-          setActiveCount(Math.max(1, count));
+        const data = await apiSessionsGet(true);
+        if (data && typeof data.activeCount === 'number') {
+          setActiveCount(data.activeCount);
         }
       } catch (err) {
         console.error('Erro ao obter contagem de prova social:', err);

@@ -1,4 +1,12 @@
-CREATE TABLE users (
+-- ==============================================================================
+-- SPRINTSTUDY - CRIAÇÃO DA BASE DE DADOS DO ZERO (SCHEMA COMPLETO)
+-- Arquitetura MVC com API Gateway & Row Level Security (RLS)
+-- ==============================================================================
+
+-- ------------------------------------------------------------------------------
+-- 1. TABELA DE UTILIZADORES
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT UNIQUE,
   password TEXT, 
@@ -6,7 +14,10 @@ CREATE TABLE users (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE sessions (
+-- ------------------------------------------------------------------------------
+-- 2. TABELA DE SESSÕES DE ESTUDO (SPRINTS DE 45 MIN)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   study_topic TEXT NOT NULL,
@@ -16,10 +27,36 @@ CREATE TABLE sessions (
   completed_at TIMESTAMP WITH TIME ZONE
 );
 
+-- ------------------------------------------------------------------------------
+-- 3. ÍNDICES DE PERFORMANCE
+-- ------------------------------------------------------------------------------
+-- Acelera a consulta de histórico de sessões por utilizador
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+
+-- Acelera o cálculo da Prova Social (sessões ativas nos últimos 45 min)
+CREATE INDEX IF NOT EXISTS idx_sessions_status_started_at ON sessions(status, started_at);
+
+-- ------------------------------------------------------------------------------
+-- 4. ATIVAÇÃO DE ROW LEVEL SECURITY (RLS)
+-- ------------------------------------------------------------------------------
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 
--- Cada utilizador autenticado só pode inserir/ler/atualizar o seu próprio registo
+-- ==============================================================================
+-- 5. POLÍTICAS DE SEGURANÇA (RLS)
+-- ==============================================================================
+-- NOTA ARQUITETURAL:
+-- Todas as operações críticas passam pelo API Gateway (/api/...) no Next.js.
+-- O servidor comunica com o Supabase utilizando a SUPABASE_SERVICE_ROLE_KEY (ou
+-- secret key sb_secret_...), que possui o atributo BYPASSRLS nativo no PostgreSQL.
+-- Isto garante que a tabela 'users' fica protegida contra leitura direta de
+-- qualquer cliente anónimo no frontend.
+-- ==============================================================================
+
+
+-- --- POLÍTICAS DA TABELA USERS ---
+-- Bloqueada para anon (leitura/escrita pública no browser proibida).
+-- Apenas utilizadores autenticados pelo Supabase Auth podem consultar o seu registo:
 CREATE POLICY "Utilizador gere o seu próprio perfil"
 ON users
 FOR ALL
@@ -27,44 +64,24 @@ TO authenticated
 USING (auth.uid() = id)
 WITH CHECK (auth.uid() = id);
 
--- 1. Leitura pública para qualquer visitante (anon e authenticated)
-CREATE POLICY "Leitura pública de sessions"
+-- --- POLÍTICAS DA TABELA SESSIONS ---
+-- 1. Leitura: permite ver sessões de utilizadores e alimentar o banner de prova social
+CREATE POLICY "Leitura de sessions"
 ON sessions
 FOR SELECT
 TO anon, authenticated
 USING (true);
 
--- 2. Utilizador autenticado só cria sessões para si próprio
-CREATE POLICY "Criar as suas próprias sessões"
+-- 2. Inserção: permite registar novas sessões de estudo iniciadas
+CREATE POLICY "Inserção de sessions"
 ON sessions
-FOR INSERT
-TO authenticated
-WITH CHECK (auth.uid() = user_id);
-
--- 3. Utilizador autenticado só atualiza as suas próprias sessões
-CREATE POLICY "Atualizar as suas próprias sessões"
-ON sessions
-FOR UPDATE
-TO authenticated
-USING (auth.uid() = user_id)
-WITH CHECK (auth.uid() = user_id);
-
--- Permitir leitura de utilizadores por username para validação de login
-CREATE POLICY "Permitir leitura para verificação de login"
-ON users
-FOR SELECT
-TO anon, authenticated
-USING (true);
-
--- Permitir atualização de dados da própria conta anónima
-CREATE POLICY "Permitir upsert do próprio perfil anónimo"
-ON users
 FOR INSERT
 TO anon, authenticated
 WITH CHECK (true);
 
-CREATE POLICY "Permitir update do próprio utilizador"
-ON users
+-- 3. Atualização: permite atualizar o estado da sessão (concluída ou desistência)
+CREATE POLICY "Atualização de sessions"
+ON sessions
 FOR UPDATE
 TO anon, authenticated
 USING (true)

@@ -20,12 +20,12 @@ const AMBIENT_SOUNDS = [
   {
     id: 'rain',
     name: 'Chuva Suave',
-    src: 'https://cdn.pixabay.com/download/audio/2021/09/06/audio_73229b1d7f.mp3?filename=soft-rain-ambient-111154.mp3',
+    src: 'https://cdn.pixabay.com/download/audio/2022/05/13/audio_257112ce99.mp3?filename=soundsforyou-soft-rain-ambient-111154.mp3',
   },
   {
     id: 'cafe',
     name: 'Café & Biblioteca',
-    src: 'https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=coffee-shop-ambience-19875.mp3',
+    src: 'https://cdn.pixabay.com/download/audio/2022/02/07/audio_6872fe6dc2.mp3?filename=freesound_community-ambience-coffee-shop-5-17059.mp3',
   },
 ];
 
@@ -307,28 +307,42 @@ export default function Timer({ userSession, onSprintComplete }) {
   // Gestão dos Sons Ambiente
   const currentSound = AMBIENT_SOUNDS.find((s) => s.id === selectedSoundId) || AMBIENT_SOUNDS[0];
 
-  const handleSelectSound = (soundId) => {
-    setSelectedSoundId(soundId);
-    if (audioPlaying && audioRef.current) {
-      audioRef.current.pause();
-      const sound = AMBIENT_SOUNDS.find((s) => s.id === soundId);
-      if (sound) {
-        audioRef.current.src = sound.src;
-        audioRef.current.play().catch(() => {});
+  // Sincronização e reprodução automática contínua dos sons ambiente
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (audioPlaying) {
+      if (audio.src !== currentSound.src) {
+        audio.src = currentSound.src;
+        audio.load();
       }
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.warn('Erro ao reproduzir som ambiente:', err);
+          }
+        });
+      }
+    } else {
+      audio.pause();
+    }
+  }, [selectedSoundId, audioPlaying, currentSound.src]);
+
+  const handleSelectSound = (soundId) => {
+    if (soundId === selectedSoundId) {
+      // Se clicou no som que já está selecionado, alterna entre tocar e pausar
+      setAudioPlaying((prev) => !prev);
+    } else {
+      // Se clicou num som diferente, muda a faixa e toca automaticamente de imediato
+      setSelectedSoundId(soundId);
+      setAudioPlaying(true);
     }
   };
 
   const toggleSound = () => {
-    if (!audioRef.current) return;
-    if (audioPlaying) {
-      audioRef.current.pause();
-      setAudioPlaying(false);
-    } else {
-      audioRef.current.src = currentSound.src;
-      audioRef.current.play().catch(() => {});
-      setAudioPlaying(true);
-    }
+    setAudioPlaying((prev) => !prev);
   };
 
   // Formatação MM:SS
@@ -368,8 +382,8 @@ export default function Timer({ userSession, onSprintComplete }) {
         </div>
       )}
 
-      {/* Áudio Ambiente */}
-      <audio ref={audioRef} loop src={currentSound.src} />
+      {/* Áudio Ambiente (gestão contínua controlada via useEffect) */}
+      <audio ref={audioRef} loop preload="auto" />
 
       {/* ======================================================== */}
       {/* ESTADO 1: ECRÃ DE AVALIAÇÃO DOPAMINÉRGICA PÓS-SPRINT    */}
@@ -539,6 +553,8 @@ export default function Timer({ userSession, onSprintComplete }) {
             <div className="grid grid-cols-3 gap-2">
               {AMBIENT_SOUNDS.map((sound) => {
                 const isSelected = selectedSoundId === sound.id;
+                const isPlayingThis = isSelected && audioPlaying;
+
                 return (
                   <button
                     key={sound.id}
@@ -550,6 +566,9 @@ export default function Timer({ userSession, onSprintComplete }) {
                         : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
                     }`}
                   >
+                    {isPlayingThis && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-pulse shrink-0" />
+                    )}
                     <span className="truncate">{sound.name}</span>
                   </button>
                 );

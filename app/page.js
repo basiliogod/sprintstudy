@@ -8,6 +8,7 @@ import { getOrCreateUserSession } from '@/lib/apiClient';
 import Timer from '@/components/Timer';
 import SocialProofBanner from '@/components/SocialProofBanner';
 import RegisterModal from '@/components/RegisterModal';
+import SemesterClimb from '@/components/SemesterClimb';
 
 export default function HomePage() {
   const [userSession, setUserSession] = useState(null);
@@ -70,6 +71,15 @@ export default function HomePage() {
 
       {/* VARIANTE DO TESTE A/B: Exibida apenas para o Grupo B */}
       {userSession?.abGroup === 'B' && <SocialProofBanner />}
+
+      {/* Resumo da Escalada do Semestre (120 Dias) */}
+      <SemesterClimb
+        streak={stats?.streak || 0}
+        streakFreezes={stats?.streakFreezes || 0}
+        streakExpiresToday={stats?.streakExpiresToday || false}
+        studiedToday={stats?.studiedToday || false}
+        variant="compact"
+      />
 
       {/* Temporizador Central */}
       <Timer 

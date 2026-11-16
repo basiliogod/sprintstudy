@@ -1,7 +1,141 @@
 /**
  * Serviço de Métricas e Gamificação
  * Módulo puro de lógica de negócio: sem acoplamento com base de dados ou frameworks de UI.
+ * Inclui cálculo dinâmico de Streak com ativação automática e passiva de Streak Freeze.
  */
+
+/**
+ * Converte qualquer objeto de data para string YYYY-MM-DD considerando o calendário local
+ * @param {Date|string} date
+ * @returns {string} Formato YYYY-MM-DD
+ */
+export function toLocalDateString(date) {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Retorna a Segunda-feira da semana de uma data no formato YYYY-MM-DD
+ * @param {Date|string} date
+ * @returns {string} Segunda-feira YYYY-MM-DD
+ */
+export function getMondayDateString(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(d.setDate(diff));
+  return toLocalDateString(monday);
+}
+
+/**
+ * Calcula o Streak e gere o consumo automático de Congeladores (Streak Freeze)
+ * @param {Array} completedSessions - Lista de sessões completadas
+ * @returns {Object} Dados consolidados do streak e congeladores
+ */
+export function calculateStreakAndFreezes(completedSessions = []) {
+  if (!Array.isArray(completedSessions) || completedSessions.length === 0) {
+    return {
+      streak: 0,
+      streakFreezes: 0,
+      totalFreezesEarned: 0,
+      freezeUsedDates: [],
+      activeFreezeDate: null,
+      freezeUsedRecently: false,
+      nextFreezeProgress: 0,
+      thisWeekSprints: 0,
+      studiedToday: false,
+      streakExpiresToday: false,
+    };
+  }
+
+  // 1. Obter dias únicos com pelo menos 1 sprint completo
+  const uniqueDays = new Set(
+    completedSessions.map((s) => toLocalDateString(s.completed_at || s.started_at))
+  );
+
+  // 2. Calcular congeladores ganhos:
+  // Cada semana com >= 5 sprints concede 1 congelador de proteção (máximo de 3 acumulados)
+  const weekCounts = new Map();
+  for (const s of completedSessions) {
+    const mondayKey = getMondayDateString(s.completed_at || s.started_at);
+    weekCounts.set(mondayKey, (weekCounts.get(mondayKey) || 0) + 1);
+  }
+
+  let totalFreezesEarned = 0;
+  for (const count of weekCounts.values()) {
+    totalFreezesEarned += Math.floor(count / 5);
+  }
+  totalFreezesEarned = Math.min(3, totalFreezesEarned);
+
+  // 3. Progresso da semana atual para o próximo congelador
+  const now = new Date();
+  const currentMondayKey = getMondayDateString(now);
+  const thisWeekSprints = weekCounts.get(currentMondayKey) || 0;
+  const nextFreezeProgress = thisWeekSprints % 5;
+
+  // 4. Hoje e Ontem
+  const todayStr = toLocalDateString(now);
+  const studiedToday = uniqueDays.has(todayStr);
+
+  // 5. Cálculo do Streak com Proteção Automática (Passiva)
+  // O congelador ativa-se sozinho para cobrir dias falhados sem exigir intervenção do utilizador.
+  let availableFreezes = totalFreezesEarned;
+  let streak = 0;
+  const freezeUsedDates = [];
+
+  let checkDate = new Date(now);
+
+  if (studiedToday) {
+    streak++;
+    checkDate.setDate(checkDate.getDate() - 1);
+  } else {
+    // Hoje ainda está a decorrer (não gasta freeze hoje, o aluno pode estudar até às 23:59).
+    // Começa a verificação do streak contínuo a partir de ontem.
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  // Percorre até 120 dias no passado (limite do semestre)
+  for (let i = 0; i < 120; i++) {
+    const dateStr = toLocalDateString(checkDate);
+
+    if (uniqueDays.has(dateStr)) {
+      streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      // O estudante falhou este dia!
+      if (availableFreezes > 0) {
+        // ATIVAÇÃO AUTOMÁTICA DO CONGELADOR:
+        // Cobre o dia em falta e preserva o streak
+        availableFreezes--;
+        freezeUsedDates.push(dateStr);
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else {
+        // Sem congeladores disponíveis: a sequência é quebrada
+        break;
+      }
+    }
+  }
+
+  const streakExpiresToday = streak > 0 && !studiedToday;
+  const activeFreezeDate = freezeUsedDates.length > 0 ? freezeUsedDates[0] : null;
+  const freezeUsedRecently = Boolean(activeFreezeDate);
+
+  return {
+    streak,
+    streakFreezes: availableFreezes,
+    totalFreezesEarned,
+    freezeUsedDates,
+    activeFreezeDate,
+    freezeUsedRecently,
+    nextFreezeProgress,
+    thisWeekSprints,
+    studiedToday,
+    streakExpiresToday,
+  };
+}
 
 /**
  * Calcula a sequência de dias consecutivos de estudo (Streak)
@@ -9,47 +143,8 @@
  * @returns {number} Número de dias consecutivos
  */
 export function calculateStreak(completedSessions = []) {
-  if (!Array.isArray(completedSessions) || completedSessions.length === 0) {
-    return 0;
-  }
-
-  // Agrupa dias únicos ordenados do mais recente para o mais antigo
-  const uniqueDays = Array.from(
-    new Set(
-      completedSessions.map((s) =>
-        new Date(s.completed_at || s.started_at).toISOString().split('T')[0]
-      )
-    )
-  ).sort((a, b) => new Date(b) - new Date(a));
-
-  if (uniqueDays.length === 0) return 0;
-
-  const todayStr = new Date().toISOString().split('T')[0];
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-  // O streak continua ativo se estudou hoje OU se estudou ontem
-  let checkDate = new Date();
-  if (!uniqueDays.includes(todayStr) && uniqueDays.includes(yesterdayStr)) {
-    checkDate = yesterday;
-  } else if (!uniqueDays.includes(todayStr) && !uniqueDays.includes(yesterdayStr)) {
-    // Se não estudou nem hoje nem ontem, o streak foi quebrado
-    return 0;
-  }
-
-  let streak = 0;
-  for (const dayStr of uniqueDays) {
-    const expectedStr = checkDate.toISOString().split('T')[0];
-    if (dayStr === expectedStr) {
-      streak++;
-      checkDate.setDate(checkDate.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-
-  return streak;
+  const result = calculateStreakAndFreezes(completedSessions);
+  return result.streak;
 }
 
 /**
@@ -68,14 +163,15 @@ export function calculateFocusLevel(totalMinutes = 0) {
 /**
  * Gera a distribuição de minutos estudados de Segunda a Domingo na semana atual
  * @param {Array} completedSessions
+ * @param {Array} freezeUsedDates - Datas que foram salvas por congelador
  * @returns {Array} Array de 7 dias com minutos e proporção
  */
-export function calculateWeeklyBreakdown(completedSessions = []) {
+export function calculateWeeklyBreakdown(completedSessions = [], freezeUsedDates = []) {
   const daysShort = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
   const now = new Date();
   
   // Encontra a Segunda-feira da semana atual (ISO: 1 = Seg, 7 = Dom)
-  const currentDayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // 1..7
+  const currentDayOfWeek = now.getDay() === 0 ? 7 : now.getDay();
   const monday = new Date(now);
   monday.setDate(now.getDate() - (currentDayOfWeek - 1));
   monday.setHours(0, 0, 0, 0);
@@ -85,23 +181,25 @@ export function calculateWeeklyBreakdown(completedSessions = []) {
   for (let i = 0; i < 7; i++) {
     const targetDate = new Date(monday);
     targetDate.setDate(monday.getDate() + i);
-    const dateStr = targetDate.toISOString().split('T')[0];
+    const dateStr = toLocalDateString(targetDate);
 
     // Soma os minutos de sessões completadas neste dia
     const daySessions = completedSessions.filter((s) => {
-      const sDateStr = new Date(s.completed_at || s.started_at).toISOString().split('T')[0];
+      const sDateStr = toLocalDateString(s.completed_at || s.started_at);
       return sDateStr === dateStr;
     });
 
     const minutes = daySessions.reduce((acc, s) => acc + (s.duration_minutes || 45), 0);
+    const isFrozen = freezeUsedDates.includes(dateStr);
 
     breakdown.push({
       day: daysShort[i],
       date: dateStr,
       minutes,
       count: daySessions.length,
-      isToday: dateStr === now.toISOString().split('T')[0],
-      isFuture: targetDate > now && dateStr !== now.toISOString().split('T')[0],
+      isToday: dateStr === toLocalDateString(now),
+      isFuture: targetDate > now && dateStr !== toLocalDateString(now),
+      isFrozen,
     });
   }
 
@@ -123,45 +221,23 @@ export function calculateUserStats(sessionList = []) {
     0
   );
 
-  const streak = calculateStreak(completed);
+  const streakData = calculateStreakAndFreezes(completed);
   const focusLevel = calculateFocusLevel(totalMinutes);
-
-  // 1. Verificação se já estudou hoje
-  const todayStr = new Date().toISOString().split('T')[0];
-  const studiedToday = completed.some(
-    (s) => new Date(s.completed_at || s.started_at).toISOString().split('T')[0] === todayStr
-  );
-
-  // 2. Alerta de urgência do Streak
-  const streakExpiresToday = streak > 0 && !studiedToday;
-
-  // 3. Gráfico semanal (Segunda a Domingo)
-  const weeklyBreakdown = calculateWeeklyBreakdown(completed);
-
-  // 4. Streak Freeze (Congelador de Sequência): 5 sprints na semana = 1 freeze
-  const now = new Date();
-  const currentDayOfWeek = now.getDay() === 0 ? 7 : now.getDay();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - (currentDayOfWeek - 1));
-  monday.setHours(0, 0, 0, 0);
-
-  const thisWeekSprints = completed.filter(
-    (s) => new Date(s.completed_at || s.started_at) >= monday
-  ).length;
-
-  const streakFreezes = Math.floor(thisWeekSprints / 5);
-  const nextFreezeProgress = thisWeekSprints % 5; // ex: 3 de 5
+  const weeklyBreakdown = calculateWeeklyBreakdown(completed, streakData.freezeUsedDates);
 
   return {
     completedCount,
     totalMinutes,
-    streak,
+    streak: streakData.streak,
     focusLevel,
-    studiedToday,
-    streakExpiresToday,
+    studiedToday: streakData.studiedToday,
+    streakExpiresToday: streakData.streakExpiresToday,
     weeklyBreakdown,
-    thisWeekSprints,
-    streakFreezes,
-    nextFreezeProgress,
+    thisWeekSprints: streakData.thisWeekSprints,
+    streakFreezes: streakData.streakFreezes,
+    nextFreezeProgress: streakData.nextFreezeProgress,
+    freezeUsedRecently: streakData.freezeUsedRecently,
+    activeFreezeDate: streakData.activeFreezeDate,
+    totalFreezesEarned: streakData.totalFreezesEarned,
   };
 }

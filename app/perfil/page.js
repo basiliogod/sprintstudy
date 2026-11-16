@@ -200,6 +200,11 @@ export default function ProfilePage() {
           <p className="text-xs text-sky-800/80 dark:text-sky-300/80">
             Completa 5 sprints numa semana para ganhar 1 congelador que protege a tua sequência se falhares um dia.
           </p>
+          {stats.freezeUsedRecently && stats.activeFreezeDate && (
+            <p className="text-[11px] text-sky-950 dark:text-sky-200 font-bold pt-1">
+              Ativação Automática: 1 congelador salvou o teu streak no dia {stats.activeFreezeDate}.
+            </p>
+          )}
         </div>
 
         <div className="w-full sm:w-48 space-y-1 text-right">
@@ -248,6 +253,8 @@ export default function ProfilePage() {
               const heightPercent =
                 dayData.minutes > 0
                   ? Math.max(15, (dayData.minutes / maxWeeklyMinutes) * 100)
+                  : dayData.isFrozen
+                  ? 35
                   : 4;
 
               return (
@@ -256,8 +263,14 @@ export default function ProfilePage() {
                   className="flex flex-col items-center justify-end h-full gap-2 group"
                 >
                   {/* Minutos no topo da barra */}
-                  <span className="text-[10px] sm:text-xs font-mono font-semibold text-zinc-500 dark:text-zinc-400">
-                    {dayData.minutes > 0 ? `${dayData.minutes}m` : '0'}
+                  <span
+                    className={`text-[10px] sm:text-xs font-mono font-semibold ${
+                      dayData.isFrozen
+                        ? 'text-sky-600 dark:text-sky-400 font-bold'
+                        : 'text-zinc-500 dark:text-zinc-400'
+                    }`}
+                  >
+                    {dayData.minutes > 0 ? `${dayData.minutes}m` : dayData.isFrozen ? 'Gelo' : '0'}
                   </span>
 
                   {/* Barra Vertical */}
@@ -266,6 +279,8 @@ export default function ProfilePage() {
                       className={`w-full transition-all duration-700 rounded-xl ${
                         dayData.isToday
                           ? 'bg-indigo-600 shadow-sm shadow-indigo-600/30'
+                          : dayData.isFrozen
+                          ? 'bg-sky-400 dark:bg-sky-500 shadow-sm shadow-sky-400/30'
                           : dayData.minutes > 0
                           ? 'bg-indigo-400/80 dark:bg-indigo-500/70'
                           : 'bg-transparent'
@@ -279,6 +294,8 @@ export default function ProfilePage() {
                     className={`text-[11px] sm:text-xs font-bold ${
                       dayData.isToday
                         ? 'text-indigo-600 dark:text-indigo-400 underline underline-offset-4 decoration-2'
+                        : dayData.isFrozen
+                        ? 'text-sky-600 dark:text-sky-400'
                         : 'text-zinc-600 dark:text-zinc-400'
                     }`}
                   >

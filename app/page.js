@@ -57,6 +57,18 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* AVISO DE CONGELADOR ATIVADO AUTOMATICAMENTE */}
+      {stats?.freezeUsedRecently && (
+        <div className="w-full max-w-xl mb-6 rounded-2xl border border-sky-300 bg-sky-50/90 p-3 sm:px-4 text-xs font-semibold text-sky-900 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-200 shadow-xs animate-fade-in flex items-center justify-between gap-2">
+          <span>
+            <strong>Congelador Ativado!</strong> A tua sequência de {stats.streak} {stats.streak === 1 ? 'dia' : 'dias'} foi protegida automaticamente no dia {stats.activeFreezeDate}.
+          </span>
+          <span className="rounded-full bg-sky-200/80 px-2.5 py-0.5 text-[10px] font-bold text-sky-900 dark:bg-sky-900 dark:text-sky-200 shrink-0">
+            Salvo
+          </span>
+        </div>
+      )}
+
       {/* INDICADOR DE SUCESSO: Já estudou hoje */}
       {stats?.studiedToday && stats?.streak > 0 && (
         <div className="w-full max-w-xl mb-6 flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-2.5 text-xs font-semibold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 shadow-xs animate-fade-in">

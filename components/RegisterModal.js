@@ -7,8 +7,12 @@
 
 import Link from 'next/link';
 
-export default function RegisterModal({ sprintData, onClose }) {
-  if (!sprintData) return null;
+export default function RegisterModal({ sprintData, onClose, isRegistered }) {
+  // Apenas deve ser exibido para utilizadores convidados (sem conta registada)
+  if (!sprintData || isRegistered) return null;
+  if (typeof window !== 'undefined' && localStorage.getItem('studysprint_username')) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">

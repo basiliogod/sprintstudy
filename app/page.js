@@ -24,6 +24,10 @@ export default function HomePage() {
   }, []);
 
   const stats = userSession?.stats;
+  const isRegisteredUser = Boolean(
+    userSession?.username ||
+    (typeof window !== 'undefined' && localStorage.getItem('studysprint_username'))
+  );
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:py-12 flex flex-col items-center">
@@ -97,7 +101,10 @@ export default function HomePage() {
       <Timer 
         userSession={userSession} 
         onSprintComplete={(data) => {
-          setCompletedSprintData(data);
+          // Apenas abre o modal de registo se for convidado sem conta registada
+          if (!isRegisteredUser) {
+            setCompletedSprintData(data);
+          }
           loadSession();
         }} 
       />
@@ -118,11 +125,14 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Modal de Conclusão */}
-      <RegisterModal
-        sprintData={completedSprintData}
-        onClose={() => setCompletedSprintData(null)}
-      />
+      {/* Modal de Conclusão (Apenas para Utilizadores Convidados sem conta) */}
+      {!isRegisteredUser && (
+        <RegisterModal
+          sprintData={completedSprintData}
+          onClose={() => setCompletedSprintData(null)}
+          isRegistered={isRegisteredUser}
+        />
+      )}
     </div>
   );
 }

@@ -1,0 +1,185 @@
+================================================================================
+SPRINTSTUDY - FICHEIRO DE TESTES, CONTAS DEMO E COMANDOS RÁPIDOS
+================================================================================
+
+Este ficheiro contém:
+1. Credenciais de acesso para as 3 contas de teste (aluno_demo, aluno_veterano, aluno_controlo).
+2. Script SQL completo para colar no Supabase SQL Editor.
+3. Comando JavaScript para acelerar o Timer para 10 segundos na Consola (F12).
+4. Guião rápido de teste para demonstrar ao outro grupo e ao docente.
+
+================================================================================
+1. CREDENCIAIS DAS CONTAS DE TESTE
+================================================================================
+
+Todas as contas usam a mesma palavra-passe fácil de memorizar: senha123
+
+CONTA 1: aluno_demo
+- Username: aluno_demo
+- Palavra-passe: senha123
+- Grupo A/B: Grupo B (Variante com Prova Social comunitária)
+- O que demonstra:
+  * 5 dias consecutivos de Streak.
+  * O dia de ontem foi falhado (sem sprint).
+  * O Congelador de Sequência (Streak Freeze) ativou-se automaticamente para cobrir a falta.
+  * O Streak NÃO foi a zero (mantém-se nos 5 dias).
+  * Alerta de urgência: o Streak expira hoje às 23:59 se não completar 1 sprint.
+  * No gráfico semanal, o dia de ontem aparece destacado em azul-celeste com a etiqueta "Gelo".
+
+CONTA 2: aluno_veterano
+- Username: aluno_veterano
+- Palavra-passe: senha123
+- Grupo A/B: Grupo B (Variante com Prova Social comunitária)
+- O que demonstra:
+  * 42 dias consecutivos de Streak!
+  * Nível de Foco: "Mestre do Estudo" (+1.800 minutos focados).
+  * Escalada do Semestre de 120 Dias: Mostra o escalador a meio da montanha (Altitude: ~1.684m), já superou o Camp 1 (Dia 30) e segue em direção ao Camp 2 (Dia 60).
+  * Demonstra como fica o produto para um estudante avançado a meio do semestre.
+
+CONTA 3: aluno_controlo
+- Username: aluno_controlo
+- Palavra-passe: senha123
+- Grupo A/B: Grupo A (Grupo de Controlo Neutro do Teste A/B)
+- O que demonstra:
+  * Interface neutra sem o banner "Neste momento, X estudantes estão a estudar...".
+  * Permite abrir lado a lado com o aluno_demo para demonstrar a hipótese científica do Teste A/B.
+
+================================================================================
+2. SCRIPT SQL PARA O SUPABASE (CRIAR/RECRIAR AS 3 CONTAS)
+================================================================================
+
+Copia todo o bloco abaixo e cola diretamente no SQL Editor do Supabase (depois clica em "Run"):
+
+--------------------------------------------------------------------------------
+-- INÍCIO DO SCRIPT SQL
+--------------------------------------------------------------------------------
+
+-- 1. LIMPAR REGISTOS ANTERIORES DAS 3 CONTAS (SE EXISTIREM)
+DELETE FROM users 
+WHERE username IN ('aluno_demo', 'aluno_veterano', 'aluno_controlo')
+   OR id IN (
+     'a1000000-0000-0000-0000-000000000001',
+     'a2000000-0000-0000-0000-000000000002',
+     'a3000000-0000-0000-0000-000000000003'
+   );
+
+-- 2. CRIAR OS 3 UTILIZADORES COM A HASH SHA-256 DE 'senha123'
+-- Hash SHA-256 de 'senha123': 55a5e9e78207b4df8699d60886fa070079463547b095d1a05bc719bb4e6cd251
+INSERT INTO users (id, username, password, ab_group, created_at)
+VALUES
+  (
+    'a1000000-0000-0000-0000-000000000001',
+    'aluno_demo',
+    '55a5e9e78207b4df8699d60886fa070079463547b095d1a05bc719bb4e6cd251',
+    'B',
+    '2026-11-10 09:00:00+00'
+  ),
+  (
+    'a2000000-0000-0000-0000-000000000002',
+    'aluno_veterano',
+    '55a5e9e78207b4df8699d60886fa070079463547b095d1a05bc719bb4e6cd251',
+    'B',
+    '2026-10-01 09:00:00+00'
+  ),
+  (
+    'a3000000-0000-0000-0000-000000000003',
+    'aluno_controlo',
+    '55a5e9e78207b4df8699d60886fa070079463547b095d1a05bc719bb4e6cd251',
+    'A',
+    '2026-11-12 09:00:00+00'
+  );
+
+-- 3. SESSÕES DO ALUNO_DEMO (CENÁRIO DE STREAK FREEZE ATIVO)
+-- 5 dias consecutivos na semana (10 a 14 de Nov) -> Ganha 1 Congelador
+-- Domingo (15 de Nov - ontem) -> Falhado! O congelador ativa-se e salva o streak de 5 dias.
+INSERT INTO sessions (user_id, study_topic, duration_minutes, status, started_at, completed_at)
+VALUES
+  ('a1000000-0000-0000-0000-000000000001', 'Introdução a Algoritmos e Complexidade', 45, 'completed', '2026-11-10 14:00:00+00', '2026-11-10 14:45:00+00'),
+  ('a1000000-0000-0000-0000-000000000001', 'Estruturas de Dados: Árvores Binárias', 45, 'completed', '2026-11-11 15:30:00+00', '2026-11-11 16:15:00+00'),
+  ('a1000000-0000-0000-0000-000000000001', 'Programação Concorrente e Threads', 45, 'completed', '2026-11-12 10:00:00+00', '2026-11-12 10:45:00+00'),
+  ('a1000000-0000-0000-0000-000000000001', 'Arquitetura de Sistemas Distribuídos', 45, 'completed', '2026-11-13 16:00:00+00', '2026-11-13 16:45:00+00'),
+  ('a1000000-0000-0000-0000-000000000001', 'Bases de Dados: Índices e Transações ACID', 45, 'completed', '2026-11-14 11:00:00+00', '2026-11-14 11:45:00+00');
+
+-- 4. SESSÕES DO ALUNO_VETERANO (CENÁRIO DE ESCALADA AVANÇADA - 42 DIAS DE STREAK)
+-- Gera 42 dias seguidos de estudo até ao dia de ontem
+INSERT INTO sessions (user_id, study_topic, duration_minutes, status, started_at, completed_at)
+SELECT
+  'a2000000-0000-0000-0000-000000000002',
+  'Estudo Diário de Engenharia de Software - Bloco ' || (43 - s.i),
+  45,
+  'completed',
+  (DATE '2026-11-15' - (s.i - 1) * INTERVAL '1 day' + TIME '14:00:00') AT TIME ZONE 'UTC',
+  (DATE '2026-11-15' - (s.i - 1) * INTERVAL '1 day' + TIME '14:45:00') AT TIME ZONE 'UTC'
+FROM generate_series(1, 42) AS s(i);
+
+-- 5. SESSÕES DO ALUNO_CONTROLO (CENÁRIO DO GRUPO A - SEM PROVA SOCIAL)
+INSERT INTO sessions (user_id, study_topic, duration_minutes, status, started_at, completed_at)
+VALUES
+  ('a3000000-0000-0000-0000-000000000003', 'Redes de Computadores: Modelo OSI', 45, 'completed', '2026-11-13 10:00:00+00', '2026-11-13 10:45:00+00'),
+  ('a3000000-0000-0000-0000-000000000003', 'Sistemas Operativos: Gestão de Memória', 45, 'completed', '2026-11-14 14:00:00+00', '2026-11-14 14:45:00+00');
+
+--------------------------------------------------------------------------------
+-- FIM DO SCRIPT SQL
+--------------------------------------------------------------------------------
+
+
+================================================================================
+3. COMANDO PARA ACELERAR O TIMER PARA 10 SEGUNDOS (DEMO RÁPIDA)
+================================================================================
+
+Este comando permite simular os últimos 10 segundos de um sprint de 45 minutos
+sem ter de esperar pelo tempo real.
+
+PASSO A PASSO:
+1. Na página inicial (/), insere um tópico (ex: "Revisão de Exame") e clica em "Iniciar Sprint".
+2. Abre a Consola de Desenvolvedor do navegador:
+   - No Chrome/Firefox/Edge: pressiona F12 (ou Botão Direito -> Inspecionar -> separador "Console").
+3. Cola o seguinte comando de linha única e prime Enter:
+
+const s = JSON.parse(localStorage.getItem('studysprint_active_sprint')); s.startTime = Date.now() - (44 * 60 + 50) * 1000; localStorage.setItem('studysprint_active_sprint', JSON.stringify(s)); location.reload();
+
+O QUE VAI ACONTECER:
+- A página recarrega automaticamente com o aviso: "Sessão recuperada! Continuas no teu Sprint".
+- O relógio retoma em 00:10 (10 segundos para o fim!).
+- Ao chegar a 00:00:
+  * Toca o Sino Tibetano / Taça Tibetana.
+  * O som ambiente desliga-se automaticamente.
+  * Abre o modal dopaminérgico: "Conseguiste cumprir: [Tópico]?".
+  * Ao clicar em "Sim, com sucesso!", disparam os confetes, a tarefa fica riscada e o sprint é gravado no Supabase.
+  * Se estiveres com o aluno_demo, o Streak sobe imediatamente de 5 para 6 dias!
+
+
+================================================================================
+4. GUIÃO SUGERIDO DE APRESENTAÇÃO / TESTE PARA O OUTRO GRUPO
+================================================================================
+
+ETAPA 1: O Teste A/B em Ação
+- Abrir duas janelas do navegador:
+  * Janela 1: Login com aluno_demo (Grupo B) -> Reparem no banner de Prova Social ("Neste momento, X estudantes estão a estudar...").
+  * Janela 2 (ou Anónima): Login com aluno_controlo (Grupo A) -> Reparem que a interface é neutra e sem prova social.
+- Explicar ao grupo que o objetivo é testar se o gatilho de prova social reduz a taxa de desistência.
+
+ETAPA 2: A Mecânica de Streak Freeze (Sem Perda de Progresso)
+- No perfil do aluno_demo:
+  * Mostrar que ele estudou 5 dias seguidos na semana e falhou ontem (Domingo).
+  * Mostrar o aviso: "Congelador Ativado! A tua sequência de 5 dias foi protegida automaticamente".
+  * No Gráfico Semanal, mostrar o Domingo a azul-celeste com o rótulo "Gelo".
+  * Explicar que o congelador é 100% automático (o aluno não tem de carregar em nada se adoecer ou tiver um imprevisto).
+
+ETAPA 3: A Escalada do Semestre (Gamificação dos 120 Dias)
+- No perfil do aluno_veterano:
+  * Mostrar a montanha com 42 dias de subida (~1.684m de altitude).
+  * Explicar a metáfora dos 120 dias como 1 semestre académico universitário.
+
+ETAPA 4: A Conclusão em Direto
+- Iniciar um sprint com aluno_demo, rodar o comando de aceleração (10s) na consola.
+- Mostrar a transição de 5 para 6 dias de Streak ao vivo após os confetes!
+
+================================================================================
+5. LINK DO DASHBOARD DE ANALYTICS DO PROFESSOR (READ-ONLY)
+================================================================================
+
+Para demonstrar a instrumentação e métricas globais sem dar acesso administrativo:
+
+URL Web:
+/analytics

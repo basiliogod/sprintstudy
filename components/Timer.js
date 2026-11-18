@@ -77,6 +77,7 @@ export default function Timer({ userSession, onSprintComplete }) {
   // Seleção e reprodução de sons ambientes
   const [selectedSoundId, setSelectedSoundId] = useState('lofi');
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [volume, setVolume] = useState(0.6); // Volume padrão 60%
 
   // Notificações visuais de estado
   const [restoredNotice, setRestoredNotice] = useState(false);
@@ -307,10 +308,25 @@ export default function Timer({ userSession, onSprintComplete }) {
   // Gestão dos Sons Ambiente
   const currentSound = AMBIENT_SOUNDS.find((s) => s.id === selectedSoundId) || AMBIENT_SOUNDS[0];
 
+  // Carregar preferência de volume do localStorage
+  useEffect(() => {
+    try {
+      const savedVolume = localStorage.getItem('studysprint_volume');
+      if (savedVolume !== null) {
+        const val = parseFloat(savedVolume);
+        if (!isNaN(val) && val >= 0 && val <= 1) {
+          setVolume(val);
+        }
+      }
+    } catch {}
+  }, []);
+
   // Sincronização e reprodução automática contínua dos sons ambiente
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+
+    audio.volume = volume;
 
     if (audioPlaying) {
       if (audio.src !== currentSound.src) {
@@ -328,7 +344,7 @@ export default function Timer({ userSession, onSprintComplete }) {
     } else {
       audio.pause();
     }
-  }, [selectedSoundId, audioPlaying, currentSound.src]);
+  }, [selectedSoundId, audioPlaying, currentSound.src, volume]);
 
   const handleSelectSound = (soundId) => {
     if (soundId === selectedSoundId) {
@@ -343,6 +359,17 @@ export default function Timer({ userSession, onSprintComplete }) {
 
   const toggleSound = () => {
     setAudioPlaying((prev) => !prev);
+  };
+
+  const handleVolumeChange = (e) => {
+    const newVol = parseFloat(e.target.value);
+    setVolume(newVol);
+    if (audioRef.current) {
+      audioRef.current.volume = newVol;
+    }
+    try {
+      localStorage.setItem('studysprint_volume', String(newVol));
+    } catch {}
   };
 
   // Formatação MM:SS
@@ -537,8 +564,8 @@ export default function Timer({ userSession, onSprintComplete }) {
             </div>
           )}
 
-          {/* Seletor de Sons Ambiente (Lo-Fi, Chuva, Café) */}
-          <div className="rounded-2xl border border-zinc-200/80 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40 space-y-2">
+          {/* Seletor de Sons Ambiente (Lo-Fi, Chuva, Café) e Barra de Volume */}
+          <div className="rounded-2xl border border-zinc-200/80 bg-zinc-50 p-3.5 dark:border-zinc-800 dark:bg-zinc-800/40 space-y-3">
             <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 px-1">
               <span>Som Ambiente de Foco:</span>
               <button
@@ -573,6 +600,26 @@ export default function Timer({ userSession, onSprintComplete }) {
                   </button>
                 );
               })}
+            </div>
+
+            {/* Barra de Controlo de Volume */}
+            <div className="pt-2 border-t border-zinc-200/60 dark:border-zinc-700/60 flex items-center gap-3 px-1">
+              <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 shrink-0">
+                Volume:
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={volume}
+                onChange={handleVolumeChange}
+                aria-label="Volume do som ambiente"
+                className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-400"
+              />
+              <span className="font-mono text-[11px] font-bold text-zinc-600 dark:text-zinc-300 w-9 text-right shrink-0">
+                {Math.round(volume * 100)}%
+              </span>
             </div>
           </div>
 

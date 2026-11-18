@@ -40,6 +40,34 @@ export default function AnalyticsDashboard({ initialData, token }) {
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const handleExportCSV = () => {
+    if (!data?.rawSessions?.length) return;
+    const headers = ['ID', 'Utilizador', 'Grupo_AB', 'Topico_Estudo', 'Duracao_Minutos', 'Estado', 'Inicio', 'Conclusao'];
+    const rows = data.rawSessions.map((s) => [
+      `"${s.id || ''}"`,
+      `"${(s.username || '').replace(/"/g, '""')}"`,
+      `"${s.abGroup || 'A'}"`,
+      `"${(s.studyTopic || '').replace(/"/g, '""')}"`,
+      s.durationMinutes || 45,
+      `"${s.status || ''}"`,
+      `"${s.startedAt || ''}"`,
+      `"${s.completedAt || ''}"`,
+    ]);
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute(
+      'download',
+      `sprintstudy_dados_brutos_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Filtragem de sessões brutas em memória (instantâneo)
   const filteredSessions = useMemo(() => {
     if (!data?.rawSessions) return [];
@@ -85,11 +113,17 @@ export default function AnalyticsDashboard({ initialData, token }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={handleExportCSV}
+            className="rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-700 shadow-2xs hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900 transition"
+          >
+            Exportar CSV
+          </button>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-xs font-bold text-zinc-800 shadow-2xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 transition disabled:opacity-50"
+            className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-xs font-bold text-zinc-800 shadow-2xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 transition disabled:opacity-50"
           >
             {refreshing ? 'A atualizar...' : 'Atualizar Dados'}
           </button>

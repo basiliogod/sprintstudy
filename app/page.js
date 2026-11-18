@@ -125,6 +125,11 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* Declaração Ética e de Privacidade (Evidence Rule 5) */}
+      <p className="mt-8 text-center text-[11px] text-zinc-400 dark:text-zinc-500 max-w-lg leading-relaxed">
+        <strong>Privacidade:</strong> Gravamos apenas identificadores anónimos e a duração dos blocos de estudo para calcular as tuas métricas de foco — sem e-mails, sem dados pessoais e sem monetização de atenção.
+      </p>
+
       {/* Modal de Conclusão (Apenas para Utilizadores Convidados sem conta) */}
       {!isRegisteredUser && (
         <RegisterModal
